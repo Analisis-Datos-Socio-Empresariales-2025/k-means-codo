@@ -155,10 +155,7 @@
                 <label for="maxKInput" class="text-lg">K Máximo a Probar:</label>
                 <input type="number" id="maxKInput" value="10" min="2" max="15" class="text-lg">
             </div>
-            <div class="control-group">
-                <label for="numClustersData" class="text-lg">Clusters Reales en Data:</label>
-                <input type="number" id="numClustersData" value="3" min="2" max="5" class="text-lg">
-            </div>
+            <!-- Se ha eliminado la entrada para "Clusters Reales en Data" -->
             <button id="newDataBtn" class="btn btn-secondary">Generar Nueva Data</button>
             <button id="runElbowBtn" class="btn btn-primary">Ejecutar Método del Codo</button>
         </div>
@@ -171,7 +168,7 @@
         const dataCtx = dataCanvas.getContext('2d');
         const elbowCanvas = document.getElementById('elbowCanvas');
         const maxKInput = document.getElementById('maxKInput');
-        const numClustersDataInput = document.getElementById('numClustersData');
+        // const numClustersDataInput = document.getElementById('numClustersData'); // Eliminado
         const newDataBtn = document.getElementById('newDataBtn');
         const runElbowBtn = document.getElementById('runElbowBtn');
         const messageBox = document.getElementById('messageBox');
@@ -207,14 +204,16 @@
         }
 
         // --- Generación de Datos (similar a make_blobs de sklearn) ---
-        function generateData(numPoints, numClusters) {
+        function generateData(numPoints) { // numClusters ya no es un parámetro de entrada del usuario
             points = [];
+            // Generar un número aleatorio de clusters reales para la data (entre 2 y 5)
+            const numActualClusters = Math.floor(Math.random() * 4) + 2; 
             const clusterCenters = [];
             const minX = 0, maxX = dataCanvas.width;
             const minY = 0, maxY = dataCanvas.height;
 
             // Generar centros de clusters dispersos
-            for (let i = 0; i < numClusters; i++) {
+            for (let i = 0; i < numActualClusters; i++) {
                 clusterCenters.push({
                     x: Math.random() * (maxX * 0.8) + (maxX * 0.1),
                     y: Math.random() * (maxY * 0.8) + (maxY * 0.1)
@@ -223,7 +222,7 @@
 
             // Generar puntos alrededor de los centros
             for (let i = 0; i < numPoints; i++) {
-                const center = clusterCenters[Math.floor(Math.random() * numClusters)];
+                const center = clusterCenters[Math.floor(Math.random() * numActualClusters)];
                 points.push({
                     x: center.x + (Math.random() - 0.5) * 80, // Desviación estándar
                     y: center.y + (Math.random() - 0.5) * 80,
@@ -237,7 +236,7 @@
                 p.y = Math.max(minY, Math.min(maxY, p.y));
             });
             drawDataCanvas();
-            showMessage(`Se generó nueva data con ${numClusters} grupos reales.`, 'info');
+            showMessage(`Se generó nueva data. Ahora, ejecuta el Método del Codo.`, 'info');
         }
 
         // --- Dibujo en el Canvas de Datos ---
@@ -357,7 +356,6 @@
             }
 
             const maxK = parseInt(maxKInput.value);
-            const actualClusters = parseInt(numClustersDataInput.value); // Obtener el número de clusters reales
             
             if (isNaN(maxK) || maxK < 2 || maxK > NUM_POINTS) {
                 showMessage(`K Máximo debe ser un número entre 2 y ${NUM_POINTS}.`, 'error');
@@ -382,17 +380,49 @@
                 elbowChart.destroy();
             }
 
-            // Preparar estilos de puntos para resaltar el codo
-            const pointBackgroundColors = Array(kValues.length).fill('#3b82f6'); // Color normal
-            const pointBorderColors = Array(kValues.length).fill('#ffffff'); // Borde normal
-            const pointRadii = Array(kValues.length).fill(6); // Radio normal
+            // --- Lógica para encontrar el "codo" automáticamente ---
+            let maxDistance = -1;
+            let elbowIndex = -1;
 
-            // Resaltar el punto del "codo" si está dentro del rango
-            const elbowIndex = actualClusters - 1; // K es 1-indexed, array es 0-indexed
-            if (elbowIndex >= 0 && elbowIndex < kValues.length) {
-                pointBackgroundColors[elbowIndex] = '#ef4444'; // Color de resaltado (rojo)
+            if (kValues.length > 2) { // Necesitamos al menos 3 puntos para un codo
+                const p1 = { x: kValues[0], y: wcssValues[0] };
+                const p2 = { x: kValues[kValues.length - 1], y: wcssValues[kValues.length - 1] };
+
+                // Ecuación de la línea: Ax + By + C = 0
+                // A = y2 - y1
+                // B = x1 - x2
+                // C = -A*x1 - B*y1
+                const A = p2.y - p1.y;
+                const B = p1.x - p2.x;
+                const C = -A * p1.x - B * p1.y;
+
+                for (let i = 0; i < kValues.length; i++) {
+                    const currentK = kValues[i];
+                    const currentWCSS = wcssValues[i];
+
+                    // Distancia de un punto (x0, y0) a una línea Ax + By + C = 0
+                    // distancia = |A*x0 + B*y0 + C| / sqrt(A^2 + B^2)
+                    const distance = Math.abs(A * currentK + B * currentWCSS + C) / Math.sqrt(A * A + B * B);
+
+                    if (distance > maxDistance) {
+                        maxDistance = distance;
+                        elbowIndex = i;
+                    }
+                }
+            }
+
+            // Preparar estilos de puntos
+            const pointBackgroundColors = Array(kValues.length).fill('#3b82f6'); 
+            const pointBorderColors = Array(kValues.length).fill('#ffffff'); 
+            const pointRadii = Array(kValues.length).fill(6); 
+
+            // Resaltar el punto del "codo" si se encontró
+            let elbowK = null;
+            if (elbowIndex !== -1) {
+                pointBackgroundColors[elbowIndex] = '#ef4444'; // Rojo
                 pointBorderColors[elbowIndex] = '#000000'; // Borde negro
                 pointRadii[elbowIndex] = 10; // Radio más grande
+                elbowK = kValues[elbowIndex];
             }
 
 
@@ -407,9 +437,9 @@
                         borderColor: '#3b82f6',
                         backgroundColor: 'rgba(59, 130, 246, 0.2)',
                         borderWidth: 3,
-                        pointRadius: pointRadii, // Usar array de radios
-                        pointBackgroundColor: pointBackgroundColors, // Usar array de colores
-                        pointBorderColor: pointBorderColors, // Usar array de colores de borde
+                        pointRadius: pointRadii, 
+                        pointBackgroundColor: pointBackgroundColors, 
+                        pointBorderColor: pointBorderColors, 
                         pointBorderWidth: 2,
                         tension: 0.3 // Suavizar la línea
                     }]
@@ -461,13 +491,18 @@
                     }
                 }
             });
-            showMessage(`¡Gráfico del Codo generado! El punto rojo y grande indica el K óptimo (el "codo") para los ${actualClusters} clusters reales.`, 'success');
+            
+            if (elbowK !== null) {
+                showMessage(`¡Gráfico del Codo generado! El punto rojo y grande indica el K óptimo (el "codo") determinado automáticamente en K=${elbowK}. Este es el punto donde la curva se dobla más drásticamente, sugiriendo la mejor relación entre el número de clusters y la compactación.`, 'success');
+            } else {
+                showMessage(`¡Gráfico del Codo generado! No se pudo determinar un codo claro. Observa la curva para identificar el punto de inflexión.`, 'warning');
+            }
         }
 
         // --- Inicialización y Eventos ---
         function init() {
-            const initialNumClusters = parseInt(numClustersDataInput.value);
-            generateData(NUM_POINTS, initialNumClusters);
+            // Se genera data con un número aleatorio de clusters reales para la demostración
+            generateData(NUM_POINTS); 
             // Inicializar el gráfico del codo vacío al principio
             if (elbowChart) {
                 elbowChart.destroy();
@@ -481,13 +516,8 @@
         }
 
         newDataBtn.addEventListener('click', () => {
-            const numClusters = parseInt(numClustersDataInput.value);
-            if (isNaN(numClusters) || numClusters < 2 || numClusters > 5) {
-                showMessage("El número de clusters reales debe ser entre 2 y 5.", 'error');
-                numClustersDataInput.value = 3; // Reset
-                return;
-            }
-            generateData(NUM_POINTS, numClusters);
+            // Ya no se usa numClustersDataInput para generar data
+            generateData(NUM_POINTS); 
             // Limpiar el gráfico del codo al generar nueva data
             if (elbowChart) {
                 elbowChart.destroy();
